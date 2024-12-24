@@ -42,9 +42,8 @@
             docker-compose
           ];
           shellHook = ''
-            export PATH="/home/alex/.rustup/toolchains/esp/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/bin:$PATH"
-            export LIBCLANG_PATH="/home/alex/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-18.1.2_20240912/esp-clang/lib"
-            # export LIBCLANG_PATH="${pkgs.llvmPackages_18.libclang.lib}/lib"
+            export PATH="$HOME/.rustup/toolchains/esp/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/bin:$PATH"
+            export LIBCLANG_PATH="$HOME/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-18.1.2_20240912/esp-clang/lib"
           '';
         };
       };
