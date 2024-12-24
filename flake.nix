@@ -12,8 +12,9 @@
       in {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
-            (alias "pull-container" ''sudo docker pull espressif/idf-rust:all_latest'')
-            (alias "build" ''sudo docker rm esp-32; sudo docker run -v "./.:/project/:rw" --name "esp-32" espressif/idf-rust:all_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build"'')
+            (alias "pull-container" ''sudo podman pull docker.io/espressif/idf-rust:esp32_latest'')
+            (alias "build" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build"'')
+            (alias "build-release" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build --release"'')
             (alias "flash" ''espflash flash ./target/xtensa-esp32-espidf/debug/test'')
           ];
           buildInputs = with pkgs; [
@@ -37,14 +38,7 @@
             openssl
             dfu-util
             libusb1
-
-            docker
-            docker-compose
           ];
-          shellHook = ''
-            export PATH="$HOME/.rustup/toolchains/esp/xtensa-esp-elf/esp-14.2.0_20240906/xtensa-esp-elf/bin:$PATH"
-            export LIBCLANG_PATH="$HOME/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-18.1.2_20240912/esp-clang/lib"
-          '';
         };
       };
       imports = [];
