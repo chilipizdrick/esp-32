@@ -10,20 +10,19 @@
       perSystem = {pkgs, ...}: let
         alias = pkgs.writeShellScriptBin;
       in {
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShell rec {
           nativeBuildInputs = [
-            (alias "pull-container" ''sudo podman pull docker.io/espressif/idf-rust:esp32_latest'')
-            (alias "build" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build"'')
-            (alias "build-release" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build --release"'')
+            (alias "pull-image" ''sudo podman pull docker.io/espressif/idf-rust:esp32_latest'')
+            (alias "build" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" -it espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build"'')
+            (alias "build-release" ''sudo podman rm esp; sudo podman run -v "./.:/project/:rw" -v "/home/alex/.cargo/registry/:/home/esp/.cargo/registry/:rw" --name "esp" -it espressif/idf-rust:esp32_latest sh -c "chmod +x ./export-esp.sh && ./export-esp.sh && cd /project && cargo build --release"'')
             (alias "flash" ''espflash flash ./target/xtensa-esp32-espidf/debug/test'')
           ];
           buildInputs = with pkgs; [
-            cargo
             rustup
             cargo-generate
             cargo-espflash
+            ldproxy
             llvm
-            espup
 
             wget
             flex
@@ -38,7 +37,18 @@
             openssl
             dfu-util
             libusb1
+            zlib
           ];
+
+          shellHook =
+            # sh
+            ''
+              . /home/alex/export-esp.sh
+              export PATH="/home/alex/.cargo/bin:$PATH"
+              export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib.outPath}/lib:$LD_LIBRARY_PATH"
+              export LD_LIBRARY_PATH="$LIBCLANG_PATH:$LD_LIBRARY_PATH"
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath buildInputs}:$LD_LIBRARY_PATH"
+            '';
         };
       };
       imports = [];

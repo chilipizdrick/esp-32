@@ -1,4 +1,4 @@
 [toolchain]
 components = ["rustfmt", "rustc-dev"]
-channel = "esp"
 targets = ["xtensa-esp32-espidf"]
+channel = "esp"
