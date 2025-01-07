@@ -22,8 +22,10 @@ default = []
 experimental = ["esp-idf-svc/experimental"]
 
 [dependencies]
+bincode = "1.3.3"
 esp-idf-svc = "0.49"
 log = "0.4"
+serde = "1.0.217"
 ws2812-esp32-rmt-driver = "^0.10.0"
 
 [build-dependencies]

@@ -2,7 +2,7 @@ mod error;
 mod presets;
 mod wifi;
 
-use core::time::Duration;
+use bincode;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     hal::{
@@ -12,136 +12,60 @@ use esp_idf_svc::{
     nvs::{EspCustomNvs, EspCustomNvsPartition, EspDefaultNvsPartition},
     wifi::EspWifi,
 };
-use std::{
-    ffi::{CStr, CString},
-    os::raw::c_char,
-    thread::sleep,
-    u8, usize,
-};
-use wifi::create_wifi_ap;
+use serde::{Deserialize, Serialize};
+use wifi::init_wifi;
 use ws2812_esp32_rmt_driver::driver::Ws2812Esp32RmtDriver;
 
 pub use crate::error::{Error, Result};
+use crate::presets::{Preset, PresetSettings};
+use crate::wifi::WiFiSettings;
 
-const PRESET_COUNT: usize = 2;
-const TIMER_DELAY: u64 = 10;
-const LED_COUNT: usize = 18;
-const WIFI_AP_SSID: &str = "esp-32";
-const WIFI_AP_PASSWORD: &str = "31415926";
+pub const PRESET_COUNT: usize = 2;
+pub const TIMER_DELAY: u64 = 10;
+pub const LED_COUNT: usize = 18;
+pub const WIFI_AP_SSID: &'static str = "esp-32";
+pub const WIFI_AP_PASSWORD: &'static str = "31415926";
 
-trait Preset {
-    fn get_scale_state_count() -> u8;
-    fn run(
-        led_driver: &mut Ws2812Esp32RmtDriver<'static>,
-        timer_driver: &mut TimerDriver<'static>,
-        preset_settings: &PresetSettings,
-    ) -> Result<()>;
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
-struct PresetSettings {
-    brightness: u8,
-    speed: u8,
-    scale: u8,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
-struct WifiSettings {
-    wifi_ssid: [c_char; 32],
-    wifi_password: [c_char; 64],
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct DeviceSettings {
-    wifi_settings: Option<WifiSettings>,
+    wifi_settings: WiFiSettings,
     preset_settings: [PresetSettings; PRESET_COUNT],
     current_preset_id: u16,
 }
 
-struct Device {
-    device_settings: DeviceSettings,
-}
-
-struct RunningRainbowPreset {}
-
-impl Preset for RunningRainbowPreset {
-    fn get_scale_state_count() -> u8 {
-        255
+impl DeviceSettings {
+    fn save(&self, storage: &mut EspCustomNvs) -> Result<()> {
+        storage.set_blob("device_settings", bincode::serialize(self)?.as_slice())?;
+        Ok(())
     }
 
-    fn run(
-        led_driver: &mut Ws2812Esp32RmtDriver<'static>,
-        timer_driver: &mut TimerDriver<'static>,
-        _preset_settings: &PresetSettings,
-    ) -> Result<()> {
-        fn wheel(wheel_pos: &u8) -> [u8; 3] {
-            match wheel_pos {
-                0..85 => [wheel_pos * 3, 255 - wheel_pos * 3, 0],
-                85..170 => [255 - (wheel_pos - 85) * 3, 0, (wheel_pos - 85) * 3],
-                170..=255 => [0, (wheel_pos - 170) * 3, 255 - (wheel_pos - 170) * 3],
-            }
-        }
-
-        let timer_tick_hz = timer_driver.tick_hz();
-        let frame_ticks = TIMER_DELAY * timer_tick_hz / 1000;
-        let mut strip: Vec<u8> = vec![0; LED_COUNT * 3];
-        let mut pixel: [u8; 3];
-
-        timer_driver.enable(true)?;
-        timer_driver.set_counter(0)?;
-
-        loop {
-            for i in 0..256 as usize {
-                for j in 0..LED_COUNT as usize {
-                    let wheel_pos = (((j * 256 / LED_COUNT) + i) % 256) as u8;
-                    pixel = wheel(&wheel_pos);
-                    (0..3).for_each(|idx| {
-                        strip[3 * j + idx] = pixel[idx];
-                    });
-                }
-                while timer_driver.counter()? < frame_ticks {
-                    sleep(Duration::from_millis(1));
-                }
-                timer_driver.set_counter(0)?;
-                led_driver.write_blocking(strip.clone().into_iter())?;
-            }
+    fn load(storage: &EspCustomNvs) -> Result<Option<DeviceSettings>> {
+        let mut buf = [0u8; core::mem::size_of::<DeviceSettings>()];
+        match storage.get_blob("device_settings", &mut buf)? {
+            Some(_) => Ok(Some(bincode::deserialize(&buf[..])?)),
+            None => Ok(None),
         }
     }
-}
-
-unsafe fn into_u8_slice<T: Sized>(data: &T) -> &[u8] {
-    core::slice::from_raw_parts((data as *const T) as *const u8, core::mem::size_of::<T>())
-}
-
-unsafe fn from_u8_slice<T: Sized>(data: &[u8]) -> T {
-    let (head, body, _tail) = (*data).align_to::<T>();
-    assert!(head.is_empty(), "Data was not aligned");
-    body
 }
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
 
     let peripherals = Peripherals::take()?;
+
     let sysloop = EspSystemEventLoop::take()?;
 
+    let default_partition = EspDefaultNvsPartition::take()?;
     let custom_partition = EspCustomNvsPartition::take("device")?;
 
-    let storage = EspCustomNvs::new(custom_partition, "device", true)?;
+    let mut storage = EspCustomNvs::new(custom_partition, "device", true)?;
 
-    let raw_device_config: [u8; core::mem::size_of::<DeviceSettings>()];
-
-    storage.get_raw("device_config", buf)?;
-
-    let default_partition = EspDefaultNvsPartition::take()?;
+    let settings = DeviceSettings::load(&mut storage)?.unwrap_or(DeviceSettings::default());
 
     let mut wifi_driver =
         EspWifi::new(peripherals.modem, sysloop.clone(), Some(default_partition))?;
 
-    create_wifi_ap(&mut wifi_driver, sysloop, WIFI_AP_SSID, WIFI_AP_PASSWORD)?;
+    init_wifi(&mut wifi_driver, sysloop, &settings.wifi_settings)?;
 
     let led_pin = peripherals.pins.gpio13;
     let channel = peripherals.rmt.channel0;
@@ -151,7 +75,7 @@ fn main() -> Result<()> {
     let timer_config = timer::config::Config::default();
     let mut timer_driver = TimerDriver::new(hardware_timer, &timer_config)?;
 
-    RunningRainbowPreset::run(
+    crate::presets::running_rainbow::RunningRainbowPreset::run(
         &mut led_driver,
         &mut timer_driver,
         &PresetSettings::default(),

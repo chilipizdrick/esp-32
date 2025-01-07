@@ -5,8 +5,32 @@ use esp_idf_svc::{
         EspWifi,
     },
 };
+use serde::{Deserialize, Serialize};
 
 use crate::Result;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum WiFiMode {
+    Client,
+    Server,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WiFiSettings {
+    mode: WiFiMode,
+    ssid: String,
+    password: String,
+}
+
+impl Default for WiFiSettings {
+    fn default() -> Self {
+        Self {
+            ssid: crate::WIFI_AP_SSID.to_string(),
+            password: crate::WIFI_AP_PASSWORD.to_string(),
+            mode: WiFiMode::Server,
+        }
+    }
+}
 
 pub fn create_wifi_ap(
     driver: &mut EspWifi<'static>,
@@ -110,5 +134,31 @@ pub fn connect_to_wifi_ap(
 
     log::info!("Wifi DHCP info: {:?}", ip_info);
 
+    Ok(())
+}
+
+pub fn init_wifi(
+    driver: &mut EspWifi<'static>,
+    sysloop: EspSystemEventLoop,
+    settings: &WiFiSettings,
+) -> Result<()> {
+    match settings.mode {
+        WiFiMode::Client => {
+            create_wifi_ap(
+                driver,
+                sysloop,
+                settings.ssid.as_str(),
+                settings.password.as_str(),
+            )?;
+        }
+        WiFiMode::Server => {
+            connect_to_wifi_ap(
+                driver,
+                sysloop,
+                settings.ssid.as_str(),
+                settings.password.as_str(),
+            )?;
+        }
+    }
     Ok(())
 }

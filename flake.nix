@@ -21,6 +21,7 @@
             rustup
             cargo-generate
             cargo-espflash
+            espup
             ldproxy
             llvm
 
